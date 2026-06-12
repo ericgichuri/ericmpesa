@@ -5,12 +5,16 @@ import json
 
 app = Flask(__name__)
 
-# Vercel KV automatically provides 'KV_URL' when linked to the project.
-# We fallback to a local connection string for safety.
-KV_URL = os.environ.get("KV_URL", "redis://localhost:6379")
+KV_URL = os.environ.get("KV_URL")
 
-# Initialize Redis client. decode_responses=True handles the strings automatically
-kv = redis.Redis.from_url(KV_URL, decode_responses=True)
+kv = None
+if KV_URL:
+    # Vercel's injected URL might start with 'redis://'. 
+    # If it does, we patch it to 'rediss://' for secure SSL connectivity required by Upstash/Vercel.
+    if KV_URL.startswith("redis://"):
+        KV_URL = KV_URL.replace("redis://", "rediss://", 1)
+        
+    kv = redis.Redis.from_url(KV_URL, decode_responses=True)
 
 @app.route('/mpesa/stk-callback', methods=['POST'])
 def stk_callback():
