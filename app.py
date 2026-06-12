@@ -1,8 +1,16 @@
+import os
 from flask import Flask, request, jsonify
-from vercel_kv import KV
+import redis
+import json
 
 app = Flask(__name__)
-kv = KV() # Uses Vercel's built-in storage environment variables automatically
+
+# Vercel KV automatically provides 'KV_URL' when linked to the project.
+# We fallback to a local connection string for safety.
+KV_URL = os.environ.get("KV_URL", "redis://localhost:6379")
+
+# Initialize Redis client. decode_responses=True handles the strings automatically
+kv = redis.Redis.from_url(KV_URL, decode_responses=True)
 
 @app.route('/mpesa/stk-callback', methods=['POST'])
 def stk_callback():
@@ -16,29 +24,30 @@ def stk_callback():
         for item in metadata:
             extracted[item["Name"]] = item.get("Value")
             
-        # Format the exact JSON package your local app needs
         log_entry = {
             "mpesa_trx_id": extracted.get("MpesaReceiptNumber"),
             "amount": extracted.get("Amount"),
             "phone_number": str(extracted.get("PhoneNumber")),
             "customer_name": "STK Push Payment",
             "account_ref": stk_callback_data.get("MerchantRequestID"),
-            "created_at": request.headers.get('X-Vercel-Id', 'Just Now') # Quick timestamp alternative
+            "created_at": request.headers.get('X-Vercel-Id', 'Just Now')
         }
         
-        # Pull existing list from Vercel KV, append new JSON, and save back
-        logs = kv.get("mpesa_pool") or []
-        logs.append(log_entry)
-        kv.set("mpesa_pool", logs)
+        # Redis stores data beautifully as string JSON structures.
+        # We push this dictionary into a Redis List named 'mpesa_pool'
+        kv.rpush("mpesa_pool", json.dumps(log_entry))
             
     return jsonify({"ResultCode": 0, "ResultDesc": "Success"})
 
 @app.route('/fetch-bridge-logs', methods=['GET'])
 def fetch_bridge_logs():
-    # 1. Grab all the raw JSON payloads waiting in the pool
-    logs = kv.get("mpesa_pool") or []
+    # 1. Fetch all records from our Redis list (from index 0 to -1 means everything)
+    raw_logs = kv.lrange("mpesa_pool", 0, -1) or []
     
-    # 2. Clear the pool instantly so they are never fetched twice
-    kv.set("mpesa_pool", [])
+    # 2. Parse the JSON strings back into native Python dictionaries
+    parsed_logs = [json.loads(log) for log in raw_logs]
     
-    return jsonify({"status": "success", "logs": logs})
+    # 3. Clear the pool instantly so they are never fetched twice
+    kv.delete("mpesa_pool")
+    
+    return jsonify({"status": "success", "logs": parsed_logs})
