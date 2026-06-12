@@ -45,13 +45,21 @@ def stk_callback():
 
 @app.route('/fetch-bridge-logs', methods=['GET'])
 def fetch_bridge_logs():
-    # 1. Fetch all records from our Redis list (from index 0 to -1 means everything)
-    raw_logs = kv.lrange("mpesa_pool", 0, -1) or []
-    
-    # 2. Parse the JSON strings back into native Python dictionaries
-    parsed_logs = [json.loads(log) for log in raw_logs]
-    
-    # 3. Clear the pool instantly so they are never fetched twice
-    kv.delete("mpesa_pool")
-    
-    return jsonify({"status": "success", "logs": parsed_logs})
+    # 🟢 CRITICAL SAFETY CHECK FIRST
+    if kv is None:
+        return jsonify({
+            "status": "error",
+            "message": "The Redis client 'kv' is not initialized because the KV_URL environment variable is missing on Vercel.",
+            "logs": []
+        }), 200 # Keeping it 200 so your local browser reads this JSON notice easily
+
+    try:
+        raw_logs = kv.lrange("mpesa_pool", 0, -1) or []
+        parsed_logs = [json.loads(log) for log in raw_logs]
+        
+        if raw_logs:
+            kv.delete("mpesa_pool")
+            
+        return jsonify({"status": "success", "logs": parsed_logs})
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Redis Error: {str(e)}", "logs": []}), 200
