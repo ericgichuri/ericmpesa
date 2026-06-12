@@ -5,16 +5,20 @@ import json
 
 app = Flask(__name__)
 
-KV_URL = os.environ.get("KV_URL")
+KV_URL = (
+    os.environ.get("KV_URL") or 
+    os.environ.get("KV_URL_NON_POOLING") or 
+    os.environ.get("REDIS_URL")
+)
 
 kv = None
 if KV_URL:
-    # Vercel's injected URL might start with 'redis://'. 
-    # If it does, we patch it to 'rediss://' for secure SSL connectivity required by Upstash/Vercel.
+    # Upgrade standard redis:// schema to rediss:// for secure cloud TLS Handshakes
     if KV_URL.startswith("redis://"):
         KV_URL = KV_URL.replace("redis://", "rediss://", 1)
-        
-    kv = redis.Redis.from_url(KV_URL, decode_responses=True)
+    
+    # We add a connection_timeout of 3 seconds to keep execution fast
+    kv = redis.Redis.from_url(KV_URL, decode_responses=True, socket_timeout=3)
 
 @app.route('/mpesa/stk-callback', methods=['POST'])
 def stk_callback():
