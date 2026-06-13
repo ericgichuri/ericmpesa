@@ -39,12 +39,18 @@ def stk_callback():
         for item in metadata:
             extracted[item["Name"]] = item.get("Value")
             
+        # Defensive extraction logic to ensure data remains consistent for SQLite types
+        try:
+            amount_val = float(extracted.get("Amount", 0))
+        except (ValueError, TypeError):
+            amount_val = 0.0
+
         log_entry = {
             "mpesa_trx_id": extracted.get("MpesaReceiptNumber"),
-            "amount": extracted.get("Amount"),
+            "amount": amount_val,
             "phone_number": str(extracted.get("PhoneNumber")),
             "customer_name": "STK Push Payment",
-            "account_ref": stk_callback_data.get("MerchantRequestID"),
+            "account_ref": str(stk_callback_data.get("MerchantRequestID")),
             "created_at": request.headers.get('X-Vercel-Id', 'Just Now')
         }
         
@@ -57,7 +63,6 @@ def stk_callback():
 def fetch_bridge_logs():
     kv = get_redis_client()
     
-    # Check dynamically if connection can be built now
     if kv is None:
         return jsonify({
             "status": "error",
