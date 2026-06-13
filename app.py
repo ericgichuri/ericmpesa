@@ -5,23 +5,30 @@ import json
 
 app = Flask(__name__)
 
-KV_URL = (
-    os.environ.get("KV_URL") or 
-    os.environ.get("KV_URL_NON_POOLING") or 
-    os.environ.get("REDIS_URL")
-)
-
-kv = None
-if KV_URL:
+def get_redis_client():
+    """Dynamically fetches environment variables and returns an active Redis client."""
+    KV_URL = (
+        os.environ.get("KV_URL") or 
+        os.environ.get("KV_URL_NON_POOLING") or 
+        os.environ.get("REDIS_URL")
+    )
+    
+    if not KV_URL:
+        return None
+        
     # Upgrade standard redis:// schema to rediss:// for secure cloud TLS Handshakes
     if KV_URL.startswith("redis://"):
         KV_URL = KV_URL.replace("redis://", "rediss://", 1)
-    
-    # We add a connection_timeout of 3 seconds to keep execution fast
-    kv = redis.Redis.from_url(KV_URL, decode_responses=True, socket_timeout=3)
+        
+    return redis.Redis.from_url(KV_URL, decode_responses=True, socket_timeout=3)
+
 
 @app.route('/mpesa/stk-callback', methods=['POST'])
 def stk_callback():
+    kv = get_redis_client()
+    if kv is None:
+        return jsonify({"ResultCode": 1, "ResultDesc": "Redis configuration missing on Vercel"}), 500
+
     data = request.get_json()
     stk_callback_data = data.get("Body", {}).get("stkCallback", {})
     
@@ -41,21 +48,22 @@ def stk_callback():
             "created_at": request.headers.get('X-Vercel-Id', 'Just Now')
         }
         
-        # Redis stores data beautifully as string JSON structures.
-        # We push this dictionary into a Redis List named 'mpesa_pool'
         kv.rpush("mpesa_pool", json.dumps(log_entry))
             
     return jsonify({"ResultCode": 0, "ResultDesc": "Success"})
 
+
 @app.route('/fetch-bridge-logs', methods=['GET'])
 def fetch_bridge_logs():
-    # 🟢 CRITICAL SAFETY CHECK FIRST
+    kv = get_redis_client()
+    
+    # Check dynamically if connection can be built now
     if kv is None:
         return jsonify({
             "status": "error",
-            "message": "The Redis client 'kv' is not initialized because the KV_URL environment variable is missing on Vercel.",
+            "message": "The Redis client 'kv' could not be initialized dynamically. Check if KV_URL environment variable is set in Vercel settings.",
             "logs": []
-        }), 200 # Keeping it 200 so your local browser reads this JSON notice easily
+        }), 200
 
     try:
         raw_logs = kv.lrange("mpesa_pool", 0, -1) or []
@@ -66,4 +74,4 @@ def fetch_bridge_logs():
             
         return jsonify({"status": "success", "logs": parsed_logs})
     except Exception as e:
-        return jsonify({"status": "error", "message": f"Redis Error: {str(e)}", "logs": []}), 200
+        return jsonify({"status": "error", "message": f"Redis Runtime Error: {str(e)}", "logs": []}), 200
