@@ -6,21 +6,15 @@ import json
 app = Flask(__name__)
 
 def get_redis_client():
-    """Dynamically fetches environment variables and returns an active Redis client."""
-    KV_URL = (
-        os.environ.get("KV_URL") or 
-        os.environ.get("KV_URL_NON_POOLING") or 
-        os.environ.get("REDIS_URL")
-    )
+    """Fetches the exact environment variable recommended by the Vercel Python tab."""
+    # Read the direct variable Vercel showed you
+    redis_url = os.environ.get('REDIS_URL')
     
-    if not KV_URL:
+    if not redis_url:
         return None
         
-    # Upgrade standard redis:// schema to rediss:// for secure cloud TLS Handshakes
-    if KV_URL.startswith("redis://"):
-        KV_URL = KV_URL.replace("redis://", "rediss://", 1)
-        
-    return redis.Redis.from_url(KV_URL, decode_responses=True, socket_timeout=3)
+    # Connect simply without manual string replacements or custom SSL parameters
+    return redis.Redis.from_url(redis_url, decode_responses=True, socket_timeout=3)
 
 
 @app.route('/mpesa/stk-callback', methods=['POST'])
