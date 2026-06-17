@@ -2,6 +2,7 @@ import os
 from flask import Flask, request, jsonify
 import redis
 import json
+from datetime import datetime, timezone
 
 app = Flask(__name__)
 
@@ -45,7 +46,7 @@ def stk_callback():
             "phone_number": str(extracted.get("PhoneNumber")),
             "customer_name": extracted.get("FirstName", "") + " " + extracted.get("LastName", ""),
             "account_ref": str(stk_callback_data.get("MerchantRequestID")),
-            "created_at": request.headers.get('X-Vercel-Id', 'Just Now')
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
         
         kv.rpush("mpesa_pool", json.dumps(log_entry))
