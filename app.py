@@ -43,7 +43,7 @@ def stk_callback():
             "mpesa_trx_id": extracted.get("MpesaReceiptNumber"),
             "amount": amount_val,
             "phone_number": str(extracted.get("PhoneNumber")),
-            "customer_name": "STK Push Payment",
+            "customer_name": extracted.get("FirstName", "") + " " + extracted.get("LastName", ""),
             "account_ref": str(stk_callback_data.get("MerchantRequestID")),
             "created_at": request.headers.get('X-Vercel-Id', 'Just Now')
         }
